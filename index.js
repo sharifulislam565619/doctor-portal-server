@@ -53,7 +53,7 @@ async function run() {
       // get all data by email and date
       app.get("/appointments", verifyToken, async (req, res) => {
          const email = req.query.email
-         const date = new Date(req.query.date).toLocaleDateString()
+         const date = req.query.date
          const query = { userEmail: email, date: date }
          const result = await appointmentCollection.find(query).toArray()
          res.json(result);
