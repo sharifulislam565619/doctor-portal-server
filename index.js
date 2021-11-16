@@ -5,12 +5,19 @@ const { MongoClient } = require('mongodb');
 const app = express()
 const cors = require("cors")
 const port = process.env.PORT || 5000
+const ObjectId = require("mongodb").ObjectId
+const fileUpload = require('express-fileupload')
 
 app.use(cors())
 app.use(express.json())
+app.use(fileUpload())
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.2wssq.mongodb.net/myFirstDatabase?retryWrites=true&w=majority`;
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
+
+const stripe = require("stripe")(process.env.CLIENT_SECRET);
+
+
 
 
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
@@ -42,12 +49,59 @@ async function run() {
       const database = client.db("doctor_portal")
       const appointmentCollection = database.collection("appointment")
       const userCollection = database.collection("users")
+      const doctorsCollection = database.collection("doctors")
+
+      app.post('/doctors', async (req, res) => {
+         const name = req.body.name;
+         const email = req.body.email;
+         const pic = req.files.image;
+         const picData = pic.data;
+         const encodedPic = picData.toString('base64');
+         const imageBuffer = Buffer.from(encodedPic, 'base64')
+         const doc = {
+            name,
+            email,
+            image: imageBuffer
+         }
+         const result = await doctorsCollection.insertOne(doc)
+         res.json(result);
+         console.log(result);
+      })
+
+
+
+      //get doctors data
+      app.get("/doctors", async (req, res) => {
+         const result = await doctorsCollection.find({}).toArray();
+         res.json(result)
+      })
 
       // insert a data
       app.post("/appointments", async (req, res) => {
          const doc = req.body;
          const result = await appointmentCollection.insertOne(doc);
          res.json(result)
+         console.log(result);
+      })
+
+      //get a payment data
+      app.get('/appointment/:id', async (req, res) => {
+         const id = req.params.id
+         const query = { _id: ObjectId(id) }
+         const result = await appointmentCollection.findOne(query)
+         res.json(result);
+      })
+      app.put('/appointment/:id', async (req, res) => {
+         const id = req.params.id
+         const payment = req.body;
+         const query = { _id: ObjectId(id) }
+         const updateDoc = {
+            $set: {
+               payment: payment
+            }
+         }
+         const result = await appointmentCollection.updateOne(query, updateDoc)
+         res.json(result);
       })
 
       // get all data by email and date
@@ -76,7 +130,6 @@ async function run() {
          const user = req.body;
          const result = await userCollection.insertOne(user);
          res.json(result)
-         console.log(result);
       })
 
       // update a user
@@ -115,6 +168,21 @@ async function run() {
          }
 
       })
+
+      // payment method
+      app.post('/stripe.paymentIntents.create', async (req, res) => {
+         const paymentInfo = req.body;
+         const amount = paymentInfo.price * 100;
+         const paymentIntent = await stripe.paymentIntents.create({
+            amount: amount,
+            currency: "usd",
+            payment_method_types: [
+               "card",
+            ],
+         });
+         res.json({ clientSecret: paymentIntent.client_secret });
+      })
+
 
    } finally {
       // await client.close()
